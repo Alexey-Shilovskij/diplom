@@ -8,7 +8,7 @@ from datetime import datetime
 import os
 import time
 import tkinter as tk
-from tkinter import filedialog
+from tkinter import ttk, filedialog, messagebox
 
 # ============= НАСТРОЙКИ =============
 HISTORY_SIZE = 10
@@ -79,7 +79,7 @@ history = {
 
 # ============= ФУНКЦИИ ДЛЯ ВЫЧИСЛЕНИЙ =============
 def calculate_angle(a, b, c):
-    #Вычисляет угол между тремя точками (a-b-c) в градусах
+    # Вычисляет угол между тремя точками (a-b-c) в градусах
     a = np.array(a)
     b = np.array(b)
     c = np.array(c)
@@ -91,23 +91,11 @@ def calculate_angle(a, b, c):
         angle = 360 - angle
     return angle
 
-'''
-def get_trend(values, threshold=5):
-    """Определяет тренд: 'up', 'down' или 'stable'"""
-    if len(values) < 3:
-        return 'stable'
-    diff = values[-1] - values[0]
-    if diff > threshold:
-        return 'up'
-    elif diff < -threshold:
-        return 'down'
-    return 'stable'
-'''
 
 # ============= АНАЛИЗ УПРАЖНЕНИЙ =============
 
 def analyze_toe_raise(landmarks, frame_height, history_list):
-    #Анализ упражнения: подъём на носочки
+    # Анализ упражнения: подъём на носочки
     feedback = []
     detailed_tips = []
 
@@ -172,7 +160,7 @@ def analyze_toe_raise(landmarks, frame_height, history_list):
 
 
 def analyze_pushup(landmarks, frame_height, history_list):
-    #Анализ упражнения: отжимания от пола
+    # Анализ упражнения: отжимания от пола
     feedback = []
     detailed_tips = []
 
@@ -229,7 +217,7 @@ def analyze_pushup(landmarks, frame_height, history_list):
 
 
 def analyze_squat(landmarks, frame_height, history_list):
-    #Анализ упражнения: полуприсед
+    # Анализ упражнения: полуприсед
     feedback = []
     detailed_tips = []
 
@@ -287,94 +275,196 @@ def analyze_squat(landmarks, frame_height, history_list):
     return feedback, detailed_tips, avg_angle
 
 
-# ============= ФУНКЦИЯ ВЫБОРА УПРАЖНЕНИЯ =============
-def select_exercise():
-    print("\n" + "=" * 50)
-    print("       ВЫБЕРИТЕ УПРАЖНЕНИЕ")
-    print("=" * 50)
-    print("1. ПОДЪЁМ НА НОСОЧКИ")
-    print("2. ОТЖИМАНИЯ ОТ ПОЛА")
-    print("3. ПОЛУПРИСЕД")
-    print("-" * 50)
+# ============= ГРАФИЧЕСКИЙ ИНТЕРФЕЙС =============
 
-    while True:
-        choice = input("Ваш выбор (1-3): ").strip()
-        if choice == "1":
-            return "toe_raise", "ПОДЪЁМ НА НОСОЧКИ"
-        elif choice == "2":
-            return "pushup", "ОТЖИМАНИЯ ОТ ПОЛА"
-        elif choice == "3":
-            return "squat", "ПОЛУПРИСЕД"
+class ExerciseApp:
+    def __init__(self, root):
+        self.root = root
+        self.root.title("AI Тренер по ЛФК")
+        self.root.geometry("700x750")
+        self.root.resizable(False, False)
+
+        # Переменные для хранения выбора
+        self.exercise_var = tk.StringVar(value="squat")
+        self.source_var = tk.StringVar(value="camera")
+        self.video_path = None
+
+        self.setup_ui()
+
+    def setup_ui(self):
+        # Заголовок
+        title_label = tk.Label(self.root, text="🏋️‍♂️ AI ТРЕНЕР ПО ЛФК 🏋️‍♀️",
+                               font=("Arial", 18, "bold"), fg="#2c3e50")
+        title_label.pack(pady=15)
+
+        # Разделитель
+        ttk.Separator(self.root, orient='horizontal').pack(fill='x', padx=20, pady=10)
+
+        # Блок выбора упражнения
+        exercise_frame = tk.LabelFrame(self.root, text="ВЫБЕРИТЕ УПРАЖНЕНИЕ",
+                                       font=("Arial", 12, "bold"), padx=15, pady=10)
+        exercise_frame.pack(fill='x', padx=20, pady=10)
+
+        # Радиокнопки для упражнений
+        exercises = [
+            ("🦶 ПОДЪЁМ НА НОСОЧКИ", "toe_raise"),
+            ("💪 ОТЖИМАНИЯ ОТ ПОЛА", "pushup"),
+            ("🦵 ПОЛУПРИСЕД", "squat")
+        ]
+
+        for text, value in exercises:
+            rb = tk.Radiobutton(exercise_frame, text=text, variable=self.exercise_var,
+                                value=value, font=("Arial", 11))
+            rb.pack(anchor='w', pady=3)
+
+        # Блок выбора источника
+        source_frame = tk.LabelFrame(self.root, text="ВЫБЕРИТЕ ИСТОЧНИК ВИДЕО",
+                                     font=("Arial", 12, "bold"), padx=15, pady=10)
+        source_frame.pack(fill='x', padx=20, pady=10)
+
+        sources = [
+            ("📁 ЗАГРУЗИТЬ ИЗ ФАЙЛА", "file"),
+            ("📷 ВЕБ-КАМЕРА", "camera")
+        ]
+
+        for text, value in sources:
+            rb = tk.Radiobutton(source_frame, text=text, variable=self.source_var,
+                                value=value, font=("Arial", 11),
+                                command=self.on_source_change)
+            rb.pack(anchor='w', pady=3)
+
+        # Блок выбора файла (изначально скрыт)
+        self.file_frame = tk.Frame(self.root)
+        self.file_label = tk.Label(self.file_frame, text="Выберите видео файл:", font=("Arial", 10))
+        self.file_label.pack(pady=5)
+
+        self.file_button = tk.Button(self.file_frame, text="📂 ОБЗОР",
+                                     command=self.select_video_file,
+                                     bg="#3498db", fg="white", font=("Arial", 10, "bold"),
+                                     relief="raised", bd=2, padx=10, pady=5)
+        self.file_button.pack(pady=5)
+
+        self.file_info = tk.Label(self.file_frame, text="Файл не выбран",
+                                  font=("Arial", 9), fg="red")
+        self.file_info.pack(pady=5)
+
+        # Блок с информацией о выборе
+        info_frame = tk.LabelFrame(self.root, text="ИНФОРМАЦИЯ",
+                                   font=("Arial", 10, "bold"), padx=15, pady=10)
+        info_frame.pack(fill='x', padx=20, pady=10)
+
+        self.info_text = tk.Text(info_frame, height=4, width=50, font=("Arial", 9),
+                                 bg="#f0f0f0", relief="sunken")
+        self.info_text.pack()
+        self.update_info()
+
+        # Кнопки управления
+        button_frame = tk.Frame(self.root)
+        button_frame.pack(pady=20)
+
+        self.start_button = tk.Button(button_frame, text="▶️ НАЧАТЬ ТРЕНИРОВКУ",
+                                      command=self.start_training,
+                                      bg="#27ae60", fg="white", font=("Arial", 14, "bold"),
+                                      relief="raised", bd=3, padx=30, pady=15)
+        self.start_button.pack(side='left', padx=10)
+
+        cancel_button = tk.Button(button_frame, text="❌ ВЫХОД",
+                                  command=self.root.quit,
+                                  bg="#e74c3c", fg="white", font=("Arial", 14, "bold"),
+                                  relief="raised", bd=3, padx=30, pady=15)
+        cancel_button.pack(side='left', padx=10)
+
+    def on_source_change(self):
+        """Обработка изменения источника видео"""
+        if self.source_var.get() == "file":
+            self.file_frame.pack(fill='x', padx=20, pady=5)
         else:
-            print("Неверный выбор. Введите 1, 2 или 3")
+            self.file_frame.pack_forget()
+            self.video_path = None
+        self.update_info()
 
-
-# ============= ФУНКЦИЯ ВЫБОРА ИСТОЧНИКА ВИДЕО =============
-def select_source():
-    print("\n" + "=" * 50)
-    print("       ВЫБЕРИТЕ ИСТОЧНИК ВИДЕО")
-    print("=" * 50)
-    print("1. ЗАГРУЗИТЬ ИЗ ФАЙЛА")
-    print("2. ВЕБ-КАМЕРА (РЕАЛЬНОЕ ВРЕМЯ)")
-    print("-" * 50)
-
-    while True:
-        choice = input("Ваш выбор (1-2): ").strip()
-        if choice == "1":
-            return "file"
-        elif choice == "2":
-            return "camera"
+    def select_video_file(self):
+        """Выбор видео файла через диалоговое окно"""
+        file_path = filedialog.askopenfilename(
+            title="Выберите видео файл",
+            filetypes=[("Видео файлы", "*.mp4 *.avi *.mov *.mkv"), ("Все файлы", "*.*")]
+        )
+        if file_path:
+            self.video_path = file_path
+            filename = os.path.basename(file_path)
+            self.file_info.config(text=f"✅ {filename}", fg="green")
         else:
-            print("Неверный выбор. Введите 1 или 2")
+            self.video_path = None
+            self.file_info.config(text="❌ Файл не выбран", fg="red")
+        self.update_info()
 
+    def update_info(self):
+        """Обновление информационного блока"""
+        self.info_text.delete('1.0', tk.END)
 
-# ============= ФУНКЦИЯ ВЫБОРА ФАЙЛА =============
-def select_video_file():
-    print("\n" + "=" * 50)
-    print("       ВЫБЕРИТЕ ВИДЕО ФАЙЛ")
-    print("=" * 50)
+        exercise_names = {
+            "toe_raise": "ПОДЪЁМ НА НОСОЧКИ",
+            "pushup": "ОТЖИМАНИЯ ОТ ПОЛА",
+            "squat": "ПОЛУПРИСЕД"
+        }
 
-    default_paths = [
-        "C:\\Users\\User\\Videos\\6.mp4",
-        "C:\\Users\\User\\Videos\\4.mp4",
-        "video.mp4"
-    ]
+        exercise = exercise_names.get(self.exercise_var.get(), "Не выбрано")
+        source = "ВЕБ-КАМЕРА" if self.source_var.get() == "camera" else "ФАЙЛ"
 
-    print("Доступные варианты:")
-    for i, path in enumerate(default_paths, 1):
-        if os.path.exists(path):
-            print(f"{i}. {path} (существует)")
-        else:
-            print(f"{i}. {path} (не найден)")
+        info_text = f"📋 ВЫБРАНО:\n\n"
+        info_text += f"Упражнение: {exercise}\n"
+        info_text += f"Источник: {source}\n"
 
-    print("0. Ввести путь вручную")
-    print("-" * 50)
-
-    while True:
-        choice = input("Ваш выбор: ").strip()
-        if choice == "0":
-            path = input("Введите полный путь к видео: ").strip()
-            if os.path.exists(path):
-                return path
+        if self.source_var.get() == "file":
+            if self.video_path:
+                info_text += f"Файл: {os.path.basename(self.video_path)}\n"
             else:
-                print(f"Файл не найден: {path}")
-        elif choice in ["1", "2", "3"]:
-            path = default_paths[int(choice) - 1]
-            if os.path.exists(path):
-                return path
-            else:
-                print(f"Файл не найден: {path}")
-        else:
-            print("Неверный выбор")
+                info_text += f"Файл: НЕ ВЫБРАН!\n"
+
+        info_text += f"\n▶️ Нажмите 'НАЧАТЬ ТРЕНИРОВКУ' для старта"
+
+        self.info_text.insert('1.0', info_text)
+
+    def start_training(self):
+        """Запуск тренировки с выбранными параметрами"""
+        # Проверка для файлового режима
+        if self.source_var.get() == "file" and not self.video_path:
+            messagebox.showerror("Ошибка", "Пожалуйста, выберите видео файл!")
+            return
+
+        # Получаем название упражнения
+        exercise_names = {
+            "toe_raise": "ПОДЪЁМ НА НОСОЧКИ",
+            "pushup": "ОТЖИМАНИЯ ОТ ПОЛА",
+            "squat": "ПОЛУПРИСЕД"
+        }
+
+        exercise_name = exercise_names[self.exercise_var.get()]
+
+        # Скрываем главное окно
+        self.root.withdraw()
+
+        # Запускаем тренировку
+        try:
+            process_video(
+                self.exercise_var.get(),
+                exercise_name,
+                self.source_var.get(),
+                self.video_path
+            )
+        except Exception as e:
+            messagebox.showerror("Ошибка", f"Произошла ошибка:\n{str(e)}")
+        finally:
+            # Показываем главное окно после завершения
+            self.root.deiconify()
 
 
 # ============= ОСНОВНАЯ ФУНКЦИЯ ОБРАБОТКИ ВИДЕО =============
 def process_video(exercise_key, exercise_name, source_type, video_path=None):
-
     # открытие источника видео
     if source_type == "camera":
         cap = cv2.VideoCapture(0)
-        time.sleep(5)
+        time.sleep(2)  # Уменьшил задержку для GUI
         if not cap.isOpened():
             print("Ошибка: не удалось открыть веб-камеру")
             return
@@ -517,25 +607,10 @@ def process_video(exercise_key, exercise_name, source_type, video_path=None):
     cap.release()
     cv2.destroyAllWindows()
     print("\nРабота программы завершена")
+
+
 # ============= ЗАПУСК =============
 if __name__ == "__main__":
-    print("=" * 55)
-    print("       ИИ-ТРЕНЕР ПО ЛФК - ВЕРСИЯ 2.0")
-    print("=" * 55)
-
-    exercise_key, exercise_name = select_exercise()
-
-    source_type = select_source()
-
-    video_path = None
-    if source_type == "file":
-        video_path = select_video_file()
-
-    print("\n" + "-" * 55)
-    print(f"Упражнение: {exercise_name}")
-    print(f"Источник: {'Веб-камера' if source_type == 'camera' else video_path}")
-    print("-" * 55)
-    print("Запуск... Для выхода нажмите ESC или Q")
-    print("-" * 55)
-
-    process_video(exercise_key, exercise_name, source_type, video_path)
+    root = tk.Tk()
+    app = ExerciseApp(root)
+    root.mainloop()
